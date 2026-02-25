@@ -10,8 +10,6 @@ const Registry = lish.Registry;
 const Runner = runner_mod.Runner;
 
 /// Register all folio runner ops into the given registry, bound to the given runner.
-/// UI-specific ops (speaker, font, color, nametag) are not registered here — they are
-/// the host's responsibility, bound to whatever renderer or UI system is in use.
 pub fn registerAll(registry: *Registry, runner: *Runner, allocator: Allocator) Allocator.Error!void {
     try registry.registerOperation(allocator, "instant", Operation.fromBoundFn(Runner, instantOp, runner));
     try registry.registerOperation(allocator, "speed", Operation.fromBoundFn(Runner, speedOp, runner));

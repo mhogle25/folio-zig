@@ -254,18 +254,6 @@ pub const RunnerConfig = struct {
 
 These map directly to runner behavior — no game-specific rendering logic is included.
 
-## Host-Side Ops
-
-The following operations have no folio implementation and are intentionally left to the host:
-
-| Op | Purpose |
-|----|---------|
-| `speaker` | Display a character name label |
-| `font` | Change typography (family, size, style) |
-| `color` | Change text color |
-
-Register them with `registry.registerOperation(allocator, "speaker", ...)` using whatever rendering API your engine provides.
-
 ## Scope Integration
 
 Pass game state into folio scripts via a `lish.Scope`. Variables set on the scope are accessible from any embedded lish expression using `:varname`.

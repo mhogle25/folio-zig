@@ -54,7 +54,7 @@ pub const RunnerState = enum {
     emitting,
     /// Current section fully displayed; waiting for confirm().
     waiting,
-    /// Chapter complete; no more sections.
+    /// Scene complete; no more beats.
     done,
 };
 
@@ -174,9 +174,9 @@ pub const Runner = struct {
     }
 
     /// Handle player confirmation. Context-sensitive:
-    ///   emitting + confirm_skips: flush current section instantly → waiting
+    ///   emitting + confirm_skips: flush current beat instantly → waiting
     ///   emitting + !confirm_skips: no effect
-    ///   waiting: advance to next section (or done)
+    ///   waiting: advance to next beat (or done)
     ///   done: no effect
     pub fn confirm(self: *Runner) void {
         switch (self.runner_state) {
