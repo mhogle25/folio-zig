@@ -34,7 +34,12 @@ fn instantOp(self: *Runner, args: Args) ExecError!?lish.Value {
 
 /// Set the typewriter speed. Accepts a number (chars/sec) or one of:
 ///   "slow" = 30, "normal" = 60, "fast" = 120
+/// With no arguments, resets to the host-configured default.
 fn speedOp(self: *Runner, args: Args) ExecError!?lish.Value {
+    if (args.count() == 0) {
+        self.config.chars_per_sec = self.base_chars_per_sec;
+        return null;
+    }
     const value = try args.resolveSingle();
     switch (value) {
         .string => |str| {

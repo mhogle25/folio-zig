@@ -95,6 +95,9 @@ pub const Runner = struct {
     /// char_string and char_lish nodes always use typewriter regardless of this flag.
     instant_mode: bool,
 
+    // chars_per_sec from the initial config — restored on each scene load.
+    base_chars_per_sec: f64,
+
     pub fn init(
         programme: *const Programme,
         registry: *const lish.Registry,
@@ -121,6 +124,7 @@ pub const Runner = struct {
             .char_timer = 0,
             .pause_remaining = 0,
             .instant_mode = false,
+            .base_chars_per_sec = config.chars_per_sec,
         };
     }
 
@@ -138,6 +142,7 @@ pub const Runner = struct {
         self.char_timer = 0;
         self.pause_remaining = 0;
         self.instant_mode = false;
+        self.config.chars_per_sec = self.base_chars_per_sec;
         if (scene.len > 0) {
             self.enterBeat();
         } else {
