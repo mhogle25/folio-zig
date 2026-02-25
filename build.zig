@@ -1,0 +1,29 @@
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const lish_dep = b.dependency("lish", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const lish_mod = lish_dep.module("lish");
+
+    const mod = b.addModule("ticker", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "lish", .module = lish_mod },
+        },
+    });
+
+    const mod_tests = b.addTest(.{
+        .root_module = mod,
+    });
+
+    const run_mod_tests = b.addRunArtifact(mod_tests);
+
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_mod_tests.step);
+}
