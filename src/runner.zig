@@ -673,3 +673,137 @@ test "last section confirm results in done" {
     runner.confirm();
     try std.testing.expectEqual(RunnerState.done, runner.getState());
 }
+
+// ── lish_inline / lish_defer timing tests ──
+
+/// Test-only op that increments a counter each time it is called.
+const FireCounter = struct {
+    count: usize = 0,
+
+    fn inc(self: *FireCounter, args: lish.Args) lish.exec.ExecError!?lish.Value {
+        _ = args;
+        self.count += 1;
+        return null;
+    }
+};
+
+test "lish_inline fires between preceding and following text" {
+    // Beat: text("A"), lish_inline(ping), text("B")
+    // After 'A' is emitted, ping fires and 'B' is loaded — but not yet emitted.
+    var prog = try parseAndCompile("::main\nA{ ping }B", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var counter = FireCounter{};
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+    try registry.registerOperation(
+        std.testing.allocator,
+        "ping",
+        lish.Operation.fromBoundFn(FireCounter, FireCounter.inc, &counter),
+    );
+
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .chars_per_sec = 1.0 }, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    // 500ms: timer building, nothing emitted yet
+    _ = runner.advance(500.0);
+    try std.testing.expectEqualStrings("", target.output());
+    try std.testing.expectEqual(@as(usize, 0), counter.count);
+
+    // Another 500ms: 'A' emits, ping fires inline, 'B' loaded but not yet emitted
+    _ = runner.advance(500.0);
+    try std.testing.expectEqualStrings("A", target.output());
+    try std.testing.expectEqual(@as(usize, 1), counter.count);
+    try std.testing.expectEqual(RunnerState.emitting, runner.getState());
+}
+
+test "lish_inline at beat end fires when waiting state begins" {
+    // Beat: text("A"), lish_inline(ping) — inline is the last node
+    var prog = try parseAndCompile("::main\nA{ ping }", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var counter = FireCounter{};
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+    try registry.registerOperation(
+        std.testing.allocator,
+        "ping",
+        lish.Operation.fromBoundFn(FireCounter, FireCounter.inc, &counter),
+    );
+
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .chars_per_sec = 1.0 }, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    _ = runner.advance(1_000_000.0);
+    try std.testing.expectEqual(@as(usize, 1), counter.count);
+    try std.testing.expectEqual(RunnerState.waiting, runner.getState());
+}
+
+test "lish_defer does not fire during advance, fires on confirm" {
+    // Beat: text("AB"), lish_defer(ping) — deferred should be silent until confirm
+    var prog = try parseAndCompile("::main\nAB%{ ping }", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var counter = FireCounter{};
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+    try registry.registerOperation(
+        std.testing.allocator,
+        "ping",
+        lish.Operation.fromBoundFn(FireCounter, FireCounter.inc, &counter),
+    );
+
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .chars_per_sec = 1.0 }, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    _ = runner.advance(1_000_000.0);
+    try std.testing.expectEqualStrings("AB", target.output());
+    try std.testing.expectEqual(RunnerState.waiting, runner.getState());
+    // Deferred command has NOT fired yet
+    try std.testing.expectEqual(@as(usize, 0), counter.count);
+
+    runner.confirm();
+    // Now it fires
+    try std.testing.expectEqual(@as(usize, 1), counter.count);
+}
+
+test "lish_defer fires in declaration order" {
+    // Two deferred pings — both fire on confirm, first then second
+    var prog = try parseAndCompile("::main\n%{ ping }%{ ping }", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var counter = FireCounter{};
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+    try registry.registerOperation(
+        std.testing.allocator,
+        "ping",
+        lish.Operation.fromBoundFn(FireCounter, FireCounter.inc, &counter),
+    );
+
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{}, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    _ = runner.advance(1_000_000.0);
+    try std.testing.expectEqual(RunnerState.waiting, runner.getState());
+    try std.testing.expectEqual(@as(usize, 0), counter.count);
+
+    runner.confirm();
+    try std.testing.expectEqual(@as(usize, 2), counter.count);
+}
