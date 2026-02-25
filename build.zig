@@ -18,6 +18,26 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const exe = b.addExecutable(.{
+        .name = "folio",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "lish", .module = lish_mod },
+                .{ .name = "folio", .module = mod },
+            },
+        }),
+    });
+    b.installArtifact(exe);
+
+    const run_cmd = b.addRunArtifact(exe);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run_cmd.addArgs(args);
+    const run_step = b.step("run", "Run the folio terminal player");
+    run_step.dependOn(&run_cmd.step);
+
     const mod_tests = b.addTest(.{
         .root_module = mod,
     });

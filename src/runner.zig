@@ -72,6 +72,9 @@ pub const Runner = struct {
     allocator: Allocator,
     eval_arena: std.heap.ArenaAllocator,
 
+    // Commands deferred with %{ } — fired in order when the player confirms.
+    deferred_queue: std.ArrayListUnmanaged(lish.exec.Expression),
+
     // Position
     runner_state: RunnerState,
     scene: ProgrammeScene,
@@ -84,6 +87,9 @@ pub const Runner = struct {
 
     // Accumulated time since last character emission (milliseconds)
     char_timer: f64,
+
+    /// Remaining delay before typewriter resumes (milliseconds). Set by the delay op.
+    pause_remaining: f64,
 
     /// When true, text nodes are emitted instantly instead of character-by-char.
     /// char_string and char_lish nodes always use typewriter regardless of this flag.
@@ -105,6 +111,7 @@ pub const Runner = struct {
             .config = config,
             .allocator = allocator,
             .eval_arena = std.heap.ArenaAllocator.init(allocator),
+            .deferred_queue = .{},
             .runner_state = .done,
             .scene = &.{},
             .beat_index = 0,
@@ -112,11 +119,13 @@ pub const Runner = struct {
             .current_text = "",
             .char_index = 0,
             .char_timer = 0,
+            .pause_remaining = 0,
             .instant_mode = false,
         };
     }
 
     pub fn deinit(self: *Runner) void {
+        self.deferred_queue.deinit(self.allocator);
         self.eval_arena.deinit();
     }
 
@@ -127,6 +136,7 @@ pub const Runner = struct {
         self.scene = scene;
         self.beat_index = 0;
         self.char_timer = 0;
+        self.pause_remaining = 0;
         self.instant_mode = false;
         if (scene.len > 0) {
             self.enterBeat();
@@ -136,15 +146,29 @@ pub const Runner = struct {
         return true;
     }
 
-    /// Advance the runner by delta_ms milliseconds. Emits characters as
-    /// the timer allows. Returns the current state after advancement.
+    /// Advance the runner by delta_ms milliseconds. Drains any active delay
+    /// first, then emits characters. Surplus time after a delay expires carries
+    /// over into character emission. Returns the current state after advancement.
     pub fn advance(self: *Runner, delta_ms: f64) RunnerState {
         if (self.runner_state != .emitting) return self.runner_state;
 
-        self.char_timer += delta_ms;
+        var remaining = delta_ms;
+
+        if (self.pause_remaining > 0) {
+            if (remaining <= self.pause_remaining) {
+                self.pause_remaining -= remaining;
+                return self.runner_state;
+            }
+            remaining -= self.pause_remaining;
+            self.pause_remaining = 0;
+        }
+
+        self.char_timer += remaining;
         const ms_per_char = 1000.0 / self.config.chars_per_sec;
 
-        while (self.step(ms_per_char)) {}
+        while (self.step(ms_per_char)) {
+            if (self.pause_remaining > 0) break;
+        }
 
         return self.runner_state;
     }
@@ -160,6 +184,19 @@ pub const Runner = struct {
             .waiting => self.advanceBeat(),
             .done => {},
         }
+    }
+
+    /// Flush the current beat instantly without advancing. Transitions to waiting.
+    /// Intended for use by the continue op.
+    pub fn continueBeat(self: *Runner) void {
+        self.flushBeat();
+    }
+
+    /// Flush the current beat instantly and immediately advance to the next.
+    /// Intended for use by the skip op.
+    pub fn skipBeat(self: *Runner) void {
+        self.flushBeat();
+        self.advanceBeat();
     }
 
     pub fn getState(self: *const Runner) RunnerState {
@@ -178,17 +215,11 @@ pub const Runner = struct {
         self.node_index = 0;
         self.current_text = "";
         self.char_index = 0;
+        self.deferred_queue.clearRetainingCapacity();
 
-        const beat = self.currentBeat() orelse {
+        if (self.currentBeat() == null) {
             self.runner_state = .done;
             return;
-        };
-
-        // Fire all lish_inline nodes at beat start before typewriter begins.
-        for (beat) |prog_node| {
-            if (prog_node == .lish_inline) {
-                self.executeSideEffect(prog_node.lish_inline);
-            }
         }
 
         self.runner_state = .emitting;
@@ -233,14 +264,16 @@ pub const Runner = struct {
         }
 
         switch (beat[self.node_index]) {
-            .lish_inline => {
-                // Already fired at section start; skip during typewriter.
+            .lish_inline => |expr| {
+                // Fires at typewriter position — immediately before the next character.
                 self.node_index += 1;
+                self.executeSideEffect(expr);
                 return true;
             },
             .lish_defer => |expr| {
-                self.executeSideEffect(expr);
+                // Queued for confirm time — fires when the player advances.
                 self.node_index += 1;
+                self.deferred_queue.append(self.allocator, expr) catch {};
                 return true;
             },
             .instant_string => |str| {
@@ -298,9 +331,11 @@ pub const Runner = struct {
 
         // Process all remaining nodes instantly.
         while (self.node_index < beat.len) {
-            switch (beat[self.node_index]) {
-                .lish_inline => {},
-                .lish_defer => |expr| self.executeSideEffect(expr),
+            const prog_node = beat[self.node_index];
+            self.node_index += 1;
+            switch (prog_node) {
+                .lish_inline => |expr| self.executeSideEffect(expr),
+                .lish_defer => |expr| self.deferred_queue.append(self.allocator, expr) catch {},
                 .text, .char_string => |str| self.render_target.appendText(str),
                 .instant_string => |str| self.render_target.appendText(str),
                 .char_lish, .instant_lish => |expr| {
@@ -308,14 +343,29 @@ pub const Runner = struct {
                     if (str.len > 0) self.render_target.appendText(str);
                 },
             }
-            self.node_index += 1;
         }
 
         self.runner_state = .waiting;
     }
 
     fn advanceBeat(self: *Runner) void {
+        // Drain deferred queue by swapping it out before iterating.
+        // This keeps the list stable even if a command (e.g. scene op) calls
+        // enterBeat() and clears self.deferred_queue mid-execution.
+        var pending = self.deferred_queue;
+        self.deferred_queue = .{};
+        defer pending.deinit(self.allocator);
+
+        for (pending.items) |expr| {
+            self.executeSideEffect(expr);
+        }
+
         self.render_target.clear();
+
+        // If a deferred command changed runner state (e.g. scene op called
+        // loadScene which called enterBeat), don't auto-advance.
+        if (self.runner_state != .waiting) return;
+
         self.beat_index += 1;
         if (self.beat_index >= self.scene.len) {
             self.runner_state = .done;

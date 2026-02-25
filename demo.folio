@@ -1,0 +1,45 @@
+::main
+#"Stranger:"
+You there.
+;;
+Yes, you. Don't look so alarmed.
+;;
+You wait.
+;;
+#"Stranger:"
+I just need...{ delay medium } directions.
+;;
+The stranger pulls out a crumpled map.
+;;
+#"You:"
+Where are you headed?
+;;
+#"Stranger:"
+Somewhere warm.
+;;
+A long pause.{ delay long } Then:
+;;
+#"Stranger:"
+The market. Do you know it?
+;;
+#"You:"
+I do. Follow the main road south — you can't miss it.
+;;
+#"Stranger:"
+#"..."
+;;
+The stranger folds the map and walks away without another word.%{ scene market }
+
+::market
+#{ concat "The market is " "loud and bright" } — a stark contrast to the cold square.
+
+Stalls line every wall. The smell of bread and woodsmoke fills the air.
+;;
+#"Vendor:"
+Something catch your eye?
+#"You:"
+Just looking.
+#"Vendor:"
+Take your time.
+;;
+You've arrived.
