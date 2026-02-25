@@ -1,7 +1,8 @@
 pub const TokenType = enum {
-    chapter_decl,
-    section_break,
+    scene_decl,
+    beat_break,
     text,
+    char_string,
     lish_inline,
     lish_defer,
     instant_string,
@@ -19,8 +20,8 @@ pub const Token = struct {
 
 // ── Syntax constants ──
 
-pub const CHAPTER_SIGIL = ':';
-pub const SECTION_SIGIL = ';';
+pub const SCENE_SIGIL = ':';
+pub const BEAT_SIGIL = ';';
 pub const BLOCK_OPEN = '{';
 pub const BLOCK_CLOSE = '}';
 pub const DEFER_SIGIL = '%';

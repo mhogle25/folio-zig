@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     });
     const lish_mod = lish_dep.module("lish");
 
-    const mod = b.addModule("ticker", .{
+    const mod = b.addModule("folio", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .imports = &.{

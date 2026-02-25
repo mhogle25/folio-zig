@@ -7,6 +7,7 @@ const Node = node_mod.Node;
 
 pub const ProgrammeNode = union(enum) {
     text: []const u8,
+    char_string: []const u8,
     instant_string: []const u8,
     lish_inline: lish.exec.Expression,
     lish_defer: lish.exec.Expression,
@@ -14,15 +15,15 @@ pub const ProgrammeNode = union(enum) {
     char_lish: lish.exec.Expression,
 };
 
-pub const ProgrammeSection = []const ProgrammeNode;
-pub const ProgrammeChapter = []const ProgrammeSection;
+pub const ProgrammeBeat = []const ProgrammeNode;
+pub const ProgrammeScene = []const ProgrammeBeat;
 
 pub const Programme = struct {
     arena: std.heap.ArenaAllocator,
-    chapters: std.StringHashMapUnmanaged(ProgrammeChapter),
+    scenes: std.StringHashMapUnmanaged(ProgrammeScene),
 
-    pub fn getChapter(self: *const Programme, name: []const u8) ?ProgrammeChapter {
-        return self.chapters.get(name);
+    pub fn getScene(self: *const Programme, name: []const u8) ?ProgrammeScene {
+        return self.scenes.get(name);
     }
 
     pub fn deinit(self: *Programme) void {
@@ -33,8 +34,8 @@ pub const Programme = struct {
 // ── Compile errors ──
 
 pub const NodeError = struct {
-    chapter: []const u8,
-    section_index: usize,
+    scene: []const u8,
+    beat_index: usize,
     node_index: usize,
     errors: []const lish.validation.ValidationError,
 };
@@ -67,28 +68,28 @@ pub fn compile(script: *const Script, allocator: std.mem.Allocator) !CompileResu
     const alloc = arena.allocator();
 
     var node_errors: std.ArrayListUnmanaged(NodeError) = .{};
-    var chapters: std.StringHashMapUnmanaged(ProgrammeChapter) = .{};
+    var scenes: std.StringHashMapUnmanaged(ProgrammeScene) = .{};
 
-    var chapter_iter = script.chapters.iterator();
-    while (chapter_iter.next()) |entry| {
-        const chapter_name = try alloc.dupe(u8, entry.key_ptr.*);
-        const source_chapter = entry.value_ptr.*;
+    var scene_iter = script.scenes.iterator();
+    while (scene_iter.next()) |entry| {
+        const scene_name = try alloc.dupe(u8, entry.key_ptr.*);
+        const source_scene = entry.value_ptr.*;
 
-        var prog_sections: std.ArrayListUnmanaged(ProgrammeSection) = .{};
+        var prog_beats: std.ArrayListUnmanaged(ProgrammeBeat) = .{};
 
-        for (source_chapter, 0..) |source_section, section_idx| {
+        for (source_scene, 0..) |source_beat, beat_idx| {
             var prog_nodes: std.ArrayListUnmanaged(ProgrammeNode) = .{};
 
-            for (source_section, 0..) |source_node, node_idx| {
-                if (try compileNode(alloc, source_node, chapter_name, section_idx, node_idx, &node_errors)) |prog_node| {
+            for (source_beat, 0..) |source_node, node_idx| {
+                if (try compileNode(alloc, source_node, scene_name, beat_idx, node_idx, &node_errors)) |prog_node| {
                     try prog_nodes.append(alloc, prog_node);
                 }
             }
 
-            try prog_sections.append(alloc, try prog_nodes.toOwnedSlice(alloc));
+            try prog_beats.append(alloc, try prog_nodes.toOwnedSlice(alloc));
         }
 
-        try chapters.put(alloc, chapter_name, try prog_sections.toOwnedSlice(alloc));
+        try scenes.put(alloc, scene_name, try prog_beats.toOwnedSlice(alloc));
     }
 
     if (node_errors.items.len > 0) {
@@ -100,35 +101,36 @@ pub fn compile(script: *const Script, allocator: std.mem.Allocator) !CompileResu
 
     return .{ .ok = .{
         .arena = arena,
-        .chapters = chapters,
+        .scenes = scenes,
     } };
 }
 
 fn compileNode(
     alloc: std.mem.Allocator,
     source_node: Node,
-    chapter_name: []const u8,
-    section_index: usize,
+    scene_name: []const u8,
+    beat_index: usize,
     node_index: usize,
     node_errors: *std.ArrayListUnmanaged(NodeError),
 ) !?ProgrammeNode {
     return switch (source_node) {
         .text => |str| .{ .text = try alloc.dupe(u8, str) },
+        .char_string => |str| .{ .char_string = try alloc.dupe(u8, str) },
         .instant_string => |str| .{ .instant_string = try alloc.dupe(u8, str) },
         .lish_inline => |ast_node| blk: {
-            const expr = try validateLishNode(alloc, ast_node, chapter_name, section_index, node_index, node_errors) orelse break :blk null;
+            const expr = try validateLishNode(alloc, ast_node, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
             break :blk .{ .lish_inline = expr };
         },
         .lish_defer => |ast_node| blk: {
-            const expr = try validateLishNode(alloc, ast_node, chapter_name, section_index, node_index, node_errors) orelse break :blk null;
+            const expr = try validateLishNode(alloc, ast_node, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
             break :blk .{ .lish_defer = expr };
         },
         .instant_lish => |ast_node| blk: {
-            const expr = try validateLishNode(alloc, ast_node, chapter_name, section_index, node_index, node_errors) orelse break :blk null;
+            const expr = try validateLishNode(alloc, ast_node, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
             break :blk .{ .instant_lish = expr };
         },
         .char_lish => |ast_node| blk: {
-            const expr = try validateLishNode(alloc, ast_node, chapter_name, section_index, node_index, node_errors) orelse break :blk null;
+            const expr = try validateLishNode(alloc, ast_node, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
             break :blk .{ .char_lish = expr };
         },
     };
@@ -137,8 +139,8 @@ fn compileNode(
 fn validateLishNode(
     alloc: std.mem.Allocator,
     ast_node: *lish.AstNode,
-    chapter_name: []const u8,
-    section_index: usize,
+    scene_name: []const u8,
+    beat_index: usize,
     node_index: usize,
     node_errors: *std.ArrayListUnmanaged(NodeError),
 ) !?lish.exec.Expression {
@@ -158,8 +160,8 @@ fn validateLishNode(
                 };
             }
             try node_errors.append(alloc, .{
-                .chapter = chapter_name,
-                .section_index = section_index,
+                .scene = scene_name,
+                .beat_index = beat_index,
                 .node_index = node_index,
                 .errors = duped_errors,
             });
@@ -186,9 +188,9 @@ test "compile plain text" {
     switch (result) {
         .ok => |*prog| {
             defer prog.deinit();
-            const chapter = prog.getChapter("main").?;
-            try std.testing.expectEqual(@as(usize, 1), chapter.len);
-            try std.testing.expectEqualStrings("Hello.", chapter[0][0].text);
+            const scene = prog.getScene("main").?;
+            try std.testing.expectEqual(@as(usize, 1), scene.len);
+            try std.testing.expectEqualStrings("Hello.", scene[0][0].text);
         },
         .err => |*errors| {
             errors.deinit();
@@ -204,8 +206,8 @@ test "compile instant string" {
     switch (result) {
         .ok => |*prog| {
             defer prog.deinit();
-            const section = prog.getChapter("main").?[0];
-            try std.testing.expectEqualStrings("hello", section[0].instant_string);
+            const beat = prog.getScene("main").?[0];
+            try std.testing.expectEqualStrings("hello", beat[0].instant_string);
         },
         .err => |*errors| {
             errors.deinit();
@@ -221,8 +223,8 @@ test "compile valid lish expression" {
     switch (result) {
         .ok => |*prog| {
             defer prog.deinit();
-            const section = prog.getChapter("main").?[0];
-            try std.testing.expect(section[0] == .lish_inline);
+            const beat = prog.getScene("main").?[0];
+            try std.testing.expect(beat[0] == .lish_inline);
         },
         .err => |*errors| {
             errors.deinit();
@@ -243,8 +245,8 @@ test "invalid lish expression produces compile error" {
         .err => |*errors| {
             defer errors.deinit();
             try std.testing.expectEqual(@as(usize, 1), errors.items.len);
-            try std.testing.expectEqualStrings("main", errors.items[0].chapter);
-            try std.testing.expectEqual(@as(usize, 0), errors.items[0].section_index);
+            try std.testing.expectEqualStrings("main", errors.items[0].scene);
+            try std.testing.expectEqual(@as(usize, 0), errors.items[0].beat_index);
             try std.testing.expectEqual(@as(usize, 0), errors.items[0].node_index);
         },
     }
@@ -266,7 +268,7 @@ test "multiple invalid lish nodes accumulate errors" {
     }
 }
 
-test "compile multiple chapters" {
+test "compile multiple scenes" {
     const source =
         \\::main
         \\Hello.
@@ -279,8 +281,8 @@ test "compile multiple chapters" {
     switch (result) {
         .ok => |*prog| {
             defer prog.deinit();
-            try std.testing.expect(prog.getChapter("main") != null);
-            try std.testing.expect(prog.getChapter("shop") != null);
+            try std.testing.expect(prog.getScene("main") != null);
+            try std.testing.expect(prog.getScene("shop") != null);
         },
         .err => |*errors| {
             errors.deinit();
@@ -296,8 +298,8 @@ test "compiled programme is independent from source script" {
     switch (result) {
         .ok => |*prog| {
             defer prog.deinit();
-            const chapter = prog.getChapter("main").?;
-            try std.testing.expectEqualStrings("Hello.", chapter[0][0].text);
+            const scene = prog.getScene("main").?;
+            try std.testing.expectEqualStrings("Hello.", scene[0][0].text);
         },
         .err => |*errors| {
             errors.deinit();

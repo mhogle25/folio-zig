@@ -3,6 +3,7 @@ pub const lexer = @import("lexer.zig");
 pub const node = @import("node.zig");
 pub const parser = @import("parser.zig");
 pub const programme = @import("programme.zig");
+pub const runner = @import("runner.zig");
 
 test {
     _ = token;
@@ -10,4 +11,5 @@ test {
     _ = node;
     _ = parser;
     _ = programme;
+    _ = runner;
 }

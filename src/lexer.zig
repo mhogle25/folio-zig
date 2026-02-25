@@ -6,7 +6,7 @@ const TokenType = tok.TokenType;
 pub const LexError = error{
     UnclosedBrace,
     UnclosedString,
-    EmptyChapterName,
+    EmptySceneName,
 };
 
 pub fn tokenize(source: []const u8, allocator: std.mem.Allocator) ![]Token {
@@ -54,14 +54,14 @@ const Lexer = struct {
         const ch = self.source[self.pos];
 
         if (self.at_line_start) {
-            if (ch == tok.CHAPTER_SIGIL and self.peekAt(1) == tok.CHAPTER_SIGIL) {
-                return self.scanChapterDecl(line, col);
+            if (ch == tok.SCENE_SIGIL and self.peekAt(1) == tok.SCENE_SIGIL) {
+                return self.scanSceneDecl(line, col);
             }
-            if (ch == tok.SECTION_SIGIL and self.peekAt(1) == tok.SECTION_SIGIL) {
+            if (ch == tok.BEAT_SIGIL and self.peekAt(1) == tok.BEAT_SIGIL) {
                 self.pos += 2;
                 self.col += 2;
                 self.skipToNewline();
-                return Token{ .token_type = .section_break, .value = "", .line = line, .column = col };
+                return Token{ .token_type = .beat_break, .value = "", .line = line, .column = col };
             }
         }
 
@@ -111,7 +111,7 @@ const Lexer = struct {
                 self.pos += 2;
                 self.col += 2;
                 const content = try self.scanQuotedString(quote);
-                return Token{ .token_type = .text, .value = content, .line = line, .column = col };
+                return Token{ .token_type = .char_string, .value = content, .line = line, .column = col };
             }
             if (self.peekAt(1) == tok.BLOCK_OPEN) {
                 self.pos += 2;
@@ -124,7 +124,7 @@ const Lexer = struct {
         return self.scanPlainText(line, col);
     }
 
-    fn scanChapterDecl(self: *Lexer, line: u32, col: u32) LexError!Token {
+    fn scanSceneDecl(self: *Lexer, line: u32, col: u32) LexError!Token {
         self.pos += 2;
         self.col += 2;
         self.skipSpaces();
@@ -133,14 +133,14 @@ const Lexer = struct {
             self.pos += 1;
         }
         const name = std.mem.trimRight(u8, self.source[name_start..self.pos], " \t\r");
-        if (name.len == 0) return error.EmptyChapterName;
+        if (name.len == 0) return error.EmptySceneName;
         if (self.pos < self.source.len and self.source[self.pos] == tok.NEWLINE) {
             self.pos += 1;
             self.line += 1;
             self.col = 1;
             self.at_line_start = true;
         }
-        return Token{ .token_type = .chapter_decl, .value = name, .line = line, .column = col };
+        return Token{ .token_type = .scene_decl, .value = name, .line = line, .column = col };
     }
 
     fn scanPlainText(self: *Lexer, line: u32, col: u32) Token {
@@ -257,40 +257,40 @@ test "empty source" {
     try std.testing.expectEqual(TokenType.eof, tokens[0].token_type);
 }
 
-test "chapter decl" {
+test "scene decl" {
     const tokens = try tokenize("::main", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.chapter_decl, tokens[0].token_type);
+    try std.testing.expectEqual(TokenType.scene_decl, tokens[0].token_type);
     try std.testing.expectEqualStrings("main", tokens[0].value);
 }
 
-test "chapter decl trims trailing whitespace" {
+test "scene decl trims trailing whitespace" {
     const tokens = try tokenize("::main   ", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
     try std.testing.expectEqualStrings("main", tokens[0].value);
 }
 
-test "chapter decl with leading spaces before name" {
-    const tokens = try tokenize("::   my-chapter", std.testing.allocator);
+test "scene decl with leading spaces before name" {
+    const tokens = try tokenize("::   my-scene", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqualStrings("my-chapter", tokens[0].value);
+    try std.testing.expectEqualStrings("my-scene", tokens[0].value);
 }
 
-test "empty chapter name is an error" {
-    try std.testing.expectError(error.EmptyChapterName, tokenize("::", std.testing.allocator));
+test "empty scene name is an error" {
+    try std.testing.expectError(error.EmptySceneName, tokenize("::", std.testing.allocator));
 }
 
-test "section break" {
+test "beat break" {
     const tokens = try tokenize("::main\n;;", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.chapter_decl, tokens[0].token_type);
-    try std.testing.expectEqual(TokenType.section_break, tokens[1].token_type);
+    try std.testing.expectEqual(TokenType.scene_decl, tokens[0].token_type);
+    try std.testing.expectEqual(TokenType.beat_break, tokens[1].token_type);
 }
 
-test "section break ignores trailing content on same line" {
+test "beat break ignores trailing content on same line" {
     const tokens = try tokenize("::main\n;;   ignored", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.section_break, tokens[1].token_type);
+    try std.testing.expectEqual(TokenType.beat_break, tokens[1].token_type);
 }
 
 test "plain text" {
@@ -335,10 +335,10 @@ test "lish inline with single-quoted string containing braces" {
 }
 
 test "lish defer" {
-    const tokens = try tokenize("::main\n%{ chapter \"next\" }", std.testing.allocator);
+    const tokens = try tokenize("::main\n%{ scene \"next\" }", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
     try std.testing.expectEqual(TokenType.lish_defer, tokens[1].token_type);
-    try std.testing.expectEqualStrings("chapter \"next\"", tokens[1].value);
+    try std.testing.expectEqualStrings("scene \"next\"", tokens[1].value);
 }
 
 test "instant string double quote" {
@@ -369,17 +369,17 @@ test "instant lish" {
     try std.testing.expectEqualStrings("player-name", tokens[1].value);
 }
 
-test "char-by-char string double quote normalizes to text" {
+test "char string double quote" {
     const tokens = try tokenize("::main\n@\"hello\"", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.text, tokens[1].token_type);
+    try std.testing.expectEqual(TokenType.char_string, tokens[1].token_type);
     try std.testing.expectEqualStrings("hello", tokens[1].value);
 }
 
-test "char-by-char string single quote normalizes to text" {
+test "char string single quote" {
     const tokens = try tokenize("::main\n@'hello'", std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.text, tokens[1].token_type);
+    try std.testing.expectEqual(TokenType.char_string, tokens[1].token_type);
     try std.testing.expectEqualStrings("hello", tokens[1].value);
 }
 
@@ -430,7 +430,7 @@ test "unclosed string is an error" {
     try std.testing.expectError(error.UnclosedString, tokenize("::main\n#\"unclosed", std.testing.allocator));
 }
 
-test "multiple chapters" {
+test "multiple scenes" {
     const source =
         \\::intro
         \\Hello.
@@ -439,9 +439,9 @@ test "multiple chapters" {
     ;
     const tokens = try tokenize(source, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.chapter_decl, tokens[0].token_type);
+    try std.testing.expectEqual(TokenType.scene_decl, tokens[0].token_type);
     try std.testing.expectEqualStrings("intro", tokens[0].value);
-    try std.testing.expectEqual(TokenType.chapter_decl, tokens[3].token_type);
+    try std.testing.expectEqual(TokenType.scene_decl, tokens[3].token_type);
     try std.testing.expectEqualStrings("shop", tokens[3].value);
 }
 
@@ -460,11 +460,11 @@ test "full script" {
         \\{ nametag "Vendor" }Welcome, #{ player-name }.
         \\I have some #"items" for sale.
         \\;;
-        \\%{ chapter "shop" }
+        \\%{ scene "shop" }
     ;
     const tokens = try tokenize(source, std.testing.allocator);
     defer std.testing.allocator.free(tokens);
-    try std.testing.expectEqual(TokenType.chapter_decl, tokens[0].token_type);
+    try std.testing.expectEqual(TokenType.scene_decl, tokens[0].token_type);
     try std.testing.expectEqual(TokenType.lish_inline, tokens[1].token_type);
     try std.testing.expectEqual(TokenType.text, tokens[2].token_type);
     try std.testing.expectEqual(TokenType.instant_lish, tokens[3].token_type);
