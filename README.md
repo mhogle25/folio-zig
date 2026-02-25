@@ -245,7 +245,7 @@ pub const RunnerConfig = struct {
 | Op | Args | Description |
 |----|------|-------------|
 | `instant` | 0 or 1 | Toggle instant mode (0 args), or set it by truthiness (1 arg) |
-| `speed` | 1 | Set typewriter speed: `"slow"` (30), `"normal"` (60), `"fast"` (120), or a number (chars/sec) |
+| `speed` | 0 or 1 | Set typewriter speed: `"slow"` (30), `"normal"` (60), `"fast"` (120), or a number (chars/sec). No arguments resets to the host-configured default. |
 | `delay` | 1 | Pause typewriter: `"short"` (250ms), `"medium"` (500ms), `"long"` (1000ms), or a number (ms) |
 | `scene` | 1 | Jump to a named scene |
 | `skip` | 0 | Flush current beat and immediately advance to the next |
