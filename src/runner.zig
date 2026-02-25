@@ -23,6 +23,9 @@ pub const RenderTarget = struct {
         appendText: *const fn (*anyopaque, []const u8) void,
         /// Called when transitioning to the next section.
         clear: *const fn (*anyopaque) void,
+        /// Called when a lish expression fails at runtime. message is valid only
+        /// for the duration of the call — copy it if you need to retain it.
+        reportError: *const fn (*anyopaque, []const u8) void,
     };
 
     pub fn appendChar(self: RenderTarget, char: u8) void {
@@ -35,6 +38,10 @@ pub const RenderTarget = struct {
 
     pub fn clear(self: RenderTarget) void {
         self.vtable.clear(self.context);
+    }
+
+    pub fn reportError(self: RenderTarget, message: []const u8) void {
+        self.vtable.reportError(self.context, message);
     }
 };
 
@@ -384,7 +391,13 @@ pub const Runner = struct {
             .registry = self.registry,
             .allocator = self.eval_arena.allocator(),
         };
-        _ = env.processExpression(expr, self.scope) catch {};
+        _ = env.processExpression(expr, self.scope) catch |err| {
+            const message = switch (err) {
+                error.RuntimeError => env.runtime_error orelse "unknown error",
+                error.OutOfMemory => "out of memory",
+            };
+            self.render_target.reportError(message);
+        };
     }
 
     fn evaluateToString(self: *Runner, expr: lish.exec.Expression) []const u8 {
@@ -393,7 +406,14 @@ pub const Runner = struct {
             .registry = self.registry,
             .allocator = eval_alloc,
         };
-        const result = env.processExpression(expr, self.scope) catch return "";
+        const result = env.processExpression(expr, self.scope) catch |err| {
+            const message = switch (err) {
+                error.RuntimeError => env.runtime_error orelse "unknown error",
+                error.OutOfMemory => "out of memory",
+            };
+            self.render_target.reportError(message);
+            return "";
+        };
         const value = result orelse return "";
         return valueToString(value, eval_alloc) catch return "";
     }
@@ -447,13 +467,16 @@ const TestTarget = struct {
     allocator: Allocator,
     buffer: std.ArrayListUnmanaged(u8),
     clears: usize,
+    /// Slices into the runner's eval arena — valid as long as the runner is alive.
+    error_log: std.ArrayListUnmanaged([]const u8),
 
     fn init(allocator: Allocator) TestTarget {
-        return .{ .allocator = allocator, .buffer = .{}, .clears = 0 };
+        return .{ .allocator = allocator, .buffer = .{}, .clears = 0, .error_log = .{} };
     }
 
     fn deinit(self: *TestTarget) void {
         self.buffer.deinit(self.allocator);
+        self.error_log.deinit(self.allocator);
     }
 
     fn renderTarget(self: *TestTarget) RenderTarget {
@@ -468,6 +491,7 @@ const TestTarget = struct {
         .appendChar = appendChar,
         .appendText = appendText,
         .clear = clear,
+        .reportError = reportError,
     };
 
     fn appendChar(ctx: *anyopaque, char: u8) void {
@@ -484,6 +508,11 @@ const TestTarget = struct {
         const self: *TestTarget = @ptrCast(@alignCast(ctx));
         self.buffer.clearRetainingCapacity();
         self.clears += 1;
+    }
+
+    fn reportError(ctx: *anyopaque, message: []const u8) void {
+        const self: *TestTarget = @ptrCast(@alignCast(ctx));
+        self.error_log.append(self.allocator, message) catch {};
     }
 };
 
@@ -811,4 +840,63 @@ test "lish_defer fires in declaration order" {
 
     runner.confirm();
     try std.testing.expectEqual(@as(usize, 2), counter.count);
+}
+
+// ── Error reporting tests ──
+
+test "lish_inline runtime error is reported" {
+    // 'unknown' is not registered — should produce a runtime error
+    var prog = try parseAndCompile("::main\nA{ unknown }B", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{}, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    _ = runner.advance(1_000_000.0);
+
+    try std.testing.expectEqual(@as(usize, 1), target.error_log.items.len);
+}
+
+test "lish_defer runtime error is reported on confirm" {
+    var prog = try parseAndCompile("::main\nAB%{ unknown }", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{}, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    _ = runner.advance(1_000_000.0);
+    // No errors yet — deferred has not fired
+    try std.testing.expectEqual(@as(usize, 0), target.error_log.items.len);
+    try std.testing.expectEqual(RunnerState.waiting, runner.getState());
+
+    runner.confirm();
+    try std.testing.expectEqual(@as(usize, 1), target.error_log.items.len);
+}
+
+test "instant_lish runtime error is reported and output is empty" {
+    var prog = try parseAndCompile("::main\n#{ unknown }", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{}, std.testing.allocator);
+    defer runner.deinit();
+    _ = runner.loadScene("main");
+
+    _ = runner.advance(1_000_000.0);
+
+    try std.testing.expectEqual(@as(usize, 1), target.error_log.items.len);
+    try std.testing.expectEqualStrings("", target.output());
 }

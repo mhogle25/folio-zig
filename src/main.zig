@@ -67,6 +67,7 @@ const TerminalTarget = struct {
         .appendChar = appendChar,
         .appendText = appendText,
         .clear = clear,
+        .reportError = reportError,
     };
 
     fn appendChar(_: *anyopaque, char: u8) void {
@@ -91,6 +92,12 @@ const TerminalTarget = struct {
 
     fn clear(_: *anyopaque) void {
         _ = posix.write(posix.STDOUT_FILENO, "\r\n\r\n---\r\n\r\n") catch 0;
+    }
+
+    fn reportError(_: *anyopaque, message: []const u8) void {
+        _ = posix.write(posix.STDOUT_FILENO, "\r\n\x1b[31m[error] ") catch 0;
+        _ = posix.write(posix.STDOUT_FILENO, message) catch 0;
+        _ = posix.write(posix.STDOUT_FILENO, "\x1b[0m\r\n") catch 0;
     }
 
 };

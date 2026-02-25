@@ -153,6 +153,7 @@ const MyTarget = struct {
         .appendChar = appendChar,
         .appendText = appendText,
         .clear = clear,
+        .reportError = reportError,
     };
 
     fn appendChar(ctx: *anyopaque, char: u8) void {
@@ -171,6 +172,13 @@ const MyTarget = struct {
         const self: *MyTarget = @ptrCast(@alignCast(ctx));
         _ = self;
         // clear the display (called between beats)
+    }
+
+    fn reportError(ctx: *anyopaque, message: []const u8) void {
+        const self: *MyTarget = @ptrCast(@alignCast(ctx));
+        _ = self;
+        // display or log a lish runtime error
+        _ = message;
     }
 };
 
