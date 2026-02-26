@@ -26,6 +26,19 @@ This is a different scene.
 - `;;` separates beats within a scene.
 - Every script must contain a `::main` scene.
 
+### Comments
+
+Lines beginning with `//` are comments and are ignored entirely — they produce no output and no blank line:
+
+```
+::main
+// this beat introduces the vendor
+#"Vendor:"
+Something catch your eye?
+```
+
+`//` is only recognised at the start of a line (after optional leading whitespace). Mid-line `//` is treated as plain text.
+
 ### Text Sigils
 
 | Sigil | Name | Behavior |

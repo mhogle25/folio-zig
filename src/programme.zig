@@ -33,11 +33,15 @@ pub const Programme = struct {
 
 // ── Compile errors ──
 
+pub const ScriptError = struct {
+    message: []const u8,
+};
+
 pub const NodeError = struct {
     scene: []const u8,
     beat_index: usize,
     node_index: usize,
-    errors: []const lish.validation.ValidationError,
+    errors: []const ScriptError,
 };
 
 pub const CompileErrors = struct {
@@ -123,20 +127,26 @@ fn escapeChar(symbol: u8) ?u8 {
     };
 }
 
-/// Process backslash escape sequences in a quoted folio string. Returns a
-/// newly allocated string owned by the caller. Unknown escapes are preserved
-/// as-is (both the backslash and the following character).
-fn processEscapes(alloc: std.mem.Allocator, raw: []const u8) std.mem.Allocator.Error![]const u8 {
-    if (std.mem.indexOfScalar(u8, raw, '\\') == null) return alloc.dupe(u8, raw);
+/// Process backslash escape sequences in a quoted folio string. Appends a
+/// ScriptError for each unrecognised escape sequence and returns null if any
+/// were found. Returns the processed string on success.
+fn processEscapes(
+    alloc: std.mem.Allocator,
+    raw: []const u8,
+    script_errors: *std.ArrayListUnmanaged(ScriptError),
+) !?[]const u8 {
+    if (std.mem.indexOfScalar(u8, raw, '\\') == null) return try alloc.dupe(u8, raw);
     var buf = try std.ArrayListUnmanaged(u8).initCapacity(alloc, raw.len);
+    var found_invalid = false;
     var i: usize = 0;
     while (i < raw.len) {
         if (raw[i] == '\\' and i + 1 < raw.len) {
             if (escapeChar(raw[i + 1])) |resolved| {
                 try buf.append(alloc, resolved);
             } else {
-                try buf.append(alloc, '\\');
-                try buf.append(alloc, raw[i + 1]);
+                const msg = try std.fmt.allocPrint(alloc, "unknown escape sequence: \\{c}", .{raw[i + 1]});
+                try script_errors.append(alloc, .{ .message = msg });
+                found_invalid = true;
             }
             i += 2;
         } else {
@@ -144,7 +154,30 @@ fn processEscapes(alloc: std.mem.Allocator, raw: []const u8) std.mem.Allocator.E
             i += 1;
         }
     }
-    return buf.toOwnedSlice(alloc);
+    if (found_invalid) return null;
+    return @as([]const u8, try buf.toOwnedSlice(alloc));
+}
+
+fn compileStringNode(
+    alloc: std.mem.Allocator,
+    raw: []const u8,
+    scene_name: []const u8,
+    beat_index: usize,
+    node_index: usize,
+    node_errors: *std.ArrayListUnmanaged(NodeError),
+) !?[]const u8 {
+    var script_errors: std.ArrayListUnmanaged(ScriptError) = .{};
+    const result = try processEscapes(alloc, raw, &script_errors);
+    if (script_errors.items.len > 0) {
+        try node_errors.append(alloc, .{
+            .scene = scene_name,
+            .beat_index = beat_index,
+            .node_index = node_index,
+            .errors = try script_errors.toOwnedSlice(alloc),
+        });
+        return null;
+    }
+    return result;
 }
 
 fn compileNode(
@@ -157,8 +190,14 @@ fn compileNode(
 ) !?ProgrammeNode {
     return switch (source_node) {
         .text => |str| .{ .text = try alloc.dupe(u8, str) },
-        .char_string => |str| .{ .char_string = try processEscapes(alloc, str) },
-        .instant_string => |str| .{ .instant_string = try processEscapes(alloc, str) },
+        .char_string => |str| blk: {
+            const processed = try compileStringNode(alloc, str, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
+            break :blk .{ .char_string = processed };
+        },
+        .instant_string => |str| blk: {
+            const processed = try compileStringNode(alloc, str, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
+            break :blk .{ .instant_string = processed };
+        },
         .lish_inline => |ast_node| blk: {
             const expr = try validateLishNode(alloc, ast_node, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
             break :blk .{ .lish_inline = expr };
@@ -190,22 +229,15 @@ fn validateLishNode(
     switch (result) {
         .ok => |expression| return expression,
         .err => |validation_errors| {
-            // Deep-copy errors so CompileErrors is independent from the Script's arena.
-            const duped_errors = try alloc.alloc(lish.validation.ValidationError, validation_errors.len);
+            const script_errors = try alloc.alloc(ScriptError, validation_errors.len);
             for (validation_errors, 0..) |verr, i| {
-                duped_errors[i] = .{
-                    .message = try alloc.dupe(u8, verr.message),
-                    .line = verr.line,
-                    .column = verr.column,
-                    .start = verr.start,
-                    .end = verr.end,
-                };
+                script_errors[i] = .{ .message = try alloc.dupe(u8, verr.message) };
             }
             try node_errors.append(alloc, .{
                 .scene = scene_name,
                 .beat_index = beat_index,
                 .node_index = node_index,
-                .errors = duped_errors,
+                .errors = script_errors,
             });
             return null;
         },
@@ -386,6 +418,37 @@ test "escaped backslash in instant_string" {
             try std.testing.expectEqualStrings("path\\file", beat[0].instant_string);
         },
         .err => |*errors| { errors.deinit(); return error.TestUnexpectedResult; },
+    }
+}
+
+test "invalid escape in instant_string produces compile error" {
+    var script = try parseSource("::main\n#\"hello\\zworld\"", std.testing.allocator);
+    defer script.deinit();
+    var result = try compile(&script, std.testing.allocator);
+    switch (result) {
+        .ok => |*prog| { prog.deinit(); return error.TestUnexpectedResult; },
+        .err => |*errors| {
+            defer errors.deinit();
+            try std.testing.expectEqual(@as(usize, 1), errors.items.len);
+            try std.testing.expectEqualStrings("main", errors.items[0].scene);
+            try std.testing.expectEqual(@as(usize, 1), errors.items[0].errors.len);
+            try std.testing.expectEqualStrings("unknown escape sequence: \\z", errors.items[0].errors[0].message);
+        },
+    }
+}
+
+test "invalid escape in char_string produces compile error" {
+    var script = try parseSource("::main\n@'bad\\qescape'", std.testing.allocator);
+    defer script.deinit();
+    var result = try compile(&script, std.testing.allocator);
+    switch (result) {
+        .ok => |*prog| { prog.deinit(); return error.TestUnexpectedResult; },
+        .err => |*errors| {
+            defer errors.deinit();
+            try std.testing.expectEqual(@as(usize, 1), errors.items.len);
+            try std.testing.expectEqual(@as(usize, 1), errors.items[0].errors.len);
+            try std.testing.expectEqualStrings("unknown escape sequence: \\q", errors.items[0].errors[0].message);
+        },
     }
 }
 
