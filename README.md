@@ -89,9 +89,11 @@ The market. Do you know it?
 Follow the main road south — you can't miss it.
 ;;
 The stranger folds the map and walks away.%{ scene market }
+;;
 
 ::market
 #{ concat "The market is " "loud and bright" } — a stark contrast to the cold square.
+;;
 ```
 
 In this example:
