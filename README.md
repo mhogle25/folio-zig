@@ -28,8 +28,8 @@ This is a different scene.
 
 ### Text Sigils
 
-| Text/Sigils | Name | Behavior |
-|-------------|------|----------|
+| Text & Sigils | Name | Behavior |
+|---------------|------|----------|
 | *(plain text)* | text | Typewriter character-by-character. Affected by `instant` mode. |
 | `#"..."` | instant string | Displayed all at once, bypasses typewriter. |
 | `@"..."` | char string | Always typewriter, even when instant mode is on. |
