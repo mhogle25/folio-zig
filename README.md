@@ -33,10 +33,10 @@ This is a different scene.
 | *(plain text)* | text | Typewriter character-by-character. Affected by `instant` mode. |
 | `#"..."` | instant string | Displayed all at once, bypasses typewriter. |
 | `@"..."` | char string | Always typewriter, even when instant mode is on. |
-| <code>{ lish }</code> | lish inline | Evaluates a lish expression at typewriter position (before the next character). Side-effects only. |
-| <code>%{ lish }</code> | lish defer | Queues a lish expression to fire when the player confirms. Side-effects only. |
-| <code>#{ lish }</code> | instant lish | Evaluates a lish expression and displays the result instantly as text. |
-| <code>@{ lish }</code> | char lish | Evaluates a lish expression and displays the result character-by-character. |
+| `{...}` | lish inline | Evaluates a lish expression at typewriter position (before the next character). Side-effects only. |
+| `%{...}` | lish defer | Queues a lish expression to fire when the player confirms. Side-effects only. |
+| `#{...}` | instant lish | Evaluates a lish expression and displays the result instantly as text. |
+| `@{...}` | char lish | Evaluates a lish expression and displays the result character-by-character. |
 
 ### Example Script
 
