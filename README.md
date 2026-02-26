@@ -243,6 +243,8 @@ pub const RunnerConfig = struct {
     chars_per_sec: f64 = 60.0,
     /// If true, confirm() while emitting flushes the current beat instantly. Default: true
     confirm_skips: bool = true,
+    /// If true, text nodes are emitted instantly on scene load. Default: false
+    instant_mode: bool = false,
 };
 ```
 

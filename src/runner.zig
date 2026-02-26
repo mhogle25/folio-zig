@@ -52,6 +52,8 @@ pub const RunnerConfig = struct {
     chars_per_sec: f64 = 60.0,
     /// If true, confirm() while emitting flushes the current section instantly.
     confirm_skips: bool = true,
+    /// If true, text nodes are emitted instantly instead of character-by-char on scene load.
+    instant_mode: bool = false,
 };
 
 // ── RunnerState ──
@@ -102,9 +104,10 @@ pub const Runner = struct {
     /// char_string and char_lish nodes always use typewriter regardless of this flag.
     instant_mode: bool,
 
-    // chars_per_sec and confirm_skips from the initial config — restored on each scene load.
+    // chars_per_sec, confirm_skips, and instant_mode from the initial config — restored on each scene load.
     base_chars_per_sec: f64,
     base_confirm_skips: bool,
+    base_instant_mode: bool,
 
     pub fn init(
         programme: *const Programme,
@@ -131,9 +134,10 @@ pub const Runner = struct {
             .char_index = 0,
             .char_timer = 0,
             .pause_remaining = 0,
-            .instant_mode = false,
+            .instant_mode = config.instant_mode,
             .base_chars_per_sec = config.chars_per_sec,
             .base_confirm_skips = config.confirm_skips,
+            .base_instant_mode = config.instant_mode,
         };
     }
 
@@ -150,7 +154,7 @@ pub const Runner = struct {
         self.beat_index = 0;
         self.char_timer = 0;
         self.pause_remaining = 0;
-        self.instant_mode = false;
+        self.instant_mode = self.base_instant_mode;
         self.config.chars_per_sec = self.base_chars_per_sec;
         self.config.confirm_skips = self.base_confirm_skips;
         if (scene.len > 0) {
