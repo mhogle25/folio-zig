@@ -12,6 +12,7 @@ const Runner = runner_mod.Runner;
 /// Register all folio runner ops into the given registry, bound to the given runner.
 pub fn registerAll(registry: *Registry, runner: *Runner, allocator: Allocator) Allocator.Error!void {
     try registry.registerOperation(allocator, "instant", Operation.fromBoundFn(Runner, instantOp, runner));
+    try registry.registerOperation(allocator, "ffwd", Operation.fromBoundFn(Runner, ffwdOp, runner));
     try registry.registerOperation(allocator, "speed", Operation.fromBoundFn(Runner, speedOp, runner));
     try registry.registerOperation(allocator, "delay", Operation.fromBoundFn(Runner, delayOp, runner));
     try registry.registerOperation(allocator, "scene", Operation.fromBoundFn(Runner, sceneOp, runner));
@@ -28,6 +29,16 @@ fn instantOp(self: *Runner, args: Args) ExecError!?lish.Value {
         0 => self.instant_mode = !self.instant_mode,
         1 => self.instant_mode = (try args.at(0).get()) != null,
         else => return args.env.fail("instant takes 0 or 1 argument"),
+    }
+    return null;
+}
+
+/// Toggle confirm_skips (0 args), or set it by truthiness (1 arg).
+fn ffwdOp(self: *Runner, args: Args) ExecError!?lish.Value {
+    switch (args.count()) {
+        0 => self.config.confirm_skips = !self.config.confirm_skips,
+        1 => self.config.confirm_skips = (try args.at(0).get()) != null,
+        else => return args.env.fail("ffwd takes 0 or 1 argument"),
     }
     return null;
 }

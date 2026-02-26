@@ -102,8 +102,9 @@ pub const Runner = struct {
     /// char_string and char_lish nodes always use typewriter regardless of this flag.
     instant_mode: bool,
 
-    // chars_per_sec from the initial config — restored on each scene load.
+    // chars_per_sec and confirm_skips from the initial config — restored on each scene load.
     base_chars_per_sec: f64,
+    base_confirm_skips: bool,
 
     pub fn init(
         programme: *const Programme,
@@ -132,6 +133,7 @@ pub const Runner = struct {
             .pause_remaining = 0,
             .instant_mode = false,
             .base_chars_per_sec = config.chars_per_sec,
+            .base_confirm_skips = config.confirm_skips,
         };
     }
 
@@ -150,6 +152,7 @@ pub const Runner = struct {
         self.pause_remaining = 0;
         self.instant_mode = false;
         self.config.chars_per_sec = self.base_chars_per_sec;
+        self.config.confirm_skips = self.base_confirm_skips;
         if (scene.len > 0) {
             self.enterBeat();
         } else {
@@ -899,4 +902,99 @@ test "instant_lish runtime error is reported and output is empty" {
 
     try std.testing.expectEqual(@as(usize, 1), target.error_log.items.len);
     try std.testing.expectEqualStrings("", target.output());
+}
+
+// ── ffwd op tests ──
+
+const ops_mod = @import("ops.zig");
+
+test "ffwd with no args toggles confirm_skips" {
+    // Start with confirm_skips = true; { ffwd } should flip it to false
+    var prog = try parseAndCompile("::main\n{ ffwd }", std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .confirm_skips = true }, std.testing.allocator);
+    defer runner.deinit();
+    try ops_mod.registerAll(&registry, &runner, std.testing.allocator);
+
+    _ = runner.loadScene("main");
+    try std.testing.expect(runner.config.confirm_skips);
+
+    _ = runner.advance(1_000_000.0);
+    try std.testing.expect(!runner.config.confirm_skips);
+}
+
+test "ffwd with $none disables confirm_skips" {
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+    try lish.builtins.registerAll(&registry, std.testing.allocator);
+
+    var prog = try parseAndCompile("::main\n{ ffwd $none }", std.testing.allocator);
+    defer prog.deinit();
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .confirm_skips = true }, std.testing.allocator);
+    defer runner.deinit();
+    try ops_mod.registerAll(&registry, &runner, std.testing.allocator);
+
+    _ = runner.loadScene("main");
+    _ = runner.advance(1_000_000.0);
+    try std.testing.expect(!runner.config.confirm_skips);
+}
+
+test "ffwd with truthy value enables confirm_skips" {
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+
+    var prog = try parseAndCompile("::main\n{ ffwd \"yes\" }", std.testing.allocator);
+    defer prog.deinit();
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .confirm_skips = false }, std.testing.allocator);
+    defer runner.deinit();
+    try ops_mod.registerAll(&registry, &runner, std.testing.allocator);
+
+    _ = runner.loadScene("main");
+    _ = runner.advance(1_000_000.0);
+    try std.testing.expect(runner.config.confirm_skips);
+}
+
+test "loadScene resets confirm_skips to configured default" {
+    const source =
+        \\::main
+        \\{ ffwd $none }
+        \\
+        \\::other
+        \\hello
+    ;
+    var prog = try parseAndCompile(source, std.testing.allocator);
+    defer prog.deinit();
+
+    var target = TestTarget.init(std.testing.allocator);
+    defer target.deinit();
+
+    var registry = lish.Registry{};
+    defer registry.deinit(std.testing.allocator);
+    try lish.builtins.registerAll(&registry, std.testing.allocator);
+
+    var runner = Runner.init(&prog, &registry, &lish.Scope.EMPTY, target.renderTarget(), .{ .confirm_skips = true }, std.testing.allocator);
+    defer runner.deinit();
+    try ops_mod.registerAll(&registry, &runner, std.testing.allocator);
+
+    _ = runner.loadScene("main");
+    _ = runner.advance(1_000_000.0);
+    // ffwd $none ran — confirm_skips should now be false
+    try std.testing.expect(!runner.config.confirm_skips);
+
+    // Loading a new scene resets to the configured default (true)
+    _ = runner.loadScene("other");
+    try std.testing.expect(runner.config.confirm_skips);
 }
