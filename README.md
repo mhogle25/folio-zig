@@ -30,7 +30,7 @@ This is a different scene.
 
 | Sigil | Name | Behavior |
 |-------|------|----------|
-| *(plain text)* | text | Typewriter character-by-character. Affected by `instant` mode. |
+| *(text)* | text | Typewriter character-by-character. Affected by `instant` mode. |
 | `#"..."` | instant string | Displayed all at once, bypasses typewriter. |
 | `@"..."` | char string | Always typewriter, even when instant mode is on. |
 | `{...}` | lish inline | Evaluates a lish expression at typewriter position (before the next character). Side-effects only. |
