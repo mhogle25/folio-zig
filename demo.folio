@@ -35,6 +35,7 @@ I do. Follow the main road south — you can't miss it.
 ;;
 // jumps to market scene on confirm
 The stranger folds the map and walks away without another word.%{ scene market }
+;;
 
 // ── market scene ──
 
@@ -53,3 +54,4 @@ Take your time.
 ;;
 // end of demo
 You've arrived.
+;;

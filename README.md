@@ -17,9 +17,11 @@ Hello there.
 Are you still with me?
 ;;
 Good.
+;;
 
 ::elsewhere
 This is a different scene.
+;;
 ```
 
 - `::name` declares a new scene. Scripts must have a `main` scene.
@@ -35,6 +37,7 @@ Lines beginning with `//` are comments and are ignored entirely — they produce
 // this beat introduces the vendor
 #"Vendor:"
 Something catch your eye?
+;;
 ```
 
 `//` is only recognised at the start of a line (after optional leading whitespace). Mid-line `//` is treated as plain text.
