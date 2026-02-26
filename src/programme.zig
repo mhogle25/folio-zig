@@ -105,6 +105,48 @@ pub fn compile(script: *const Script, allocator: std.mem.Allocator) !CompileResu
     } };
 }
 
+fn escapeChar(symbol: u8) ?u8 {
+    return switch (symbol) {
+        'n' => '\n',
+        'r' => '\r',
+        't' => '\t',
+        'b' => 0x08,
+        'f' => 0x0C,
+        'v' => 0x0B,
+        '0' => 0x00,
+        'a' => 0x07,
+        'e' => 0x1B,
+        '\\' => '\\',
+        '"' => '"',
+        '\'' => '\'',
+        else => null,
+    };
+}
+
+/// Process backslash escape sequences in a quoted folio string. Returns a
+/// newly allocated string owned by the caller. Unknown escapes are preserved
+/// as-is (both the backslash and the following character).
+fn processEscapes(alloc: std.mem.Allocator, raw: []const u8) std.mem.Allocator.Error![]const u8 {
+    if (std.mem.indexOfScalar(u8, raw, '\\') == null) return alloc.dupe(u8, raw);
+    var buf = try std.ArrayListUnmanaged(u8).initCapacity(alloc, raw.len);
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (raw[i] == '\\' and i + 1 < raw.len) {
+            if (escapeChar(raw[i + 1])) |resolved| {
+                try buf.append(alloc, resolved);
+            } else {
+                try buf.append(alloc, '\\');
+                try buf.append(alloc, raw[i + 1]);
+            }
+            i += 2;
+        } else {
+            try buf.append(alloc, raw[i]);
+            i += 1;
+        }
+    }
+    return buf.toOwnedSlice(alloc);
+}
+
 fn compileNode(
     alloc: std.mem.Allocator,
     source_node: Node,
@@ -115,8 +157,8 @@ fn compileNode(
 ) !?ProgrammeNode {
     return switch (source_node) {
         .text => |str| .{ .text = try alloc.dupe(u8, str) },
-        .char_string => |str| .{ .char_string = try alloc.dupe(u8, str) },
-        .instant_string => |str| .{ .instant_string = try alloc.dupe(u8, str) },
+        .char_string => |str| .{ .char_string = try processEscapes(alloc, str) },
+        .instant_string => |str| .{ .instant_string = try processEscapes(alloc, str) },
         .lish_inline => |ast_node| blk: {
             const expr = try validateLishNode(alloc, ast_node, scene_name, beat_index, node_index, node_errors) orelse break :blk null;
             break :blk .{ .lish_inline = expr };
@@ -288,6 +330,62 @@ test "compile multiple scenes" {
             errors.deinit();
             return error.TestUnexpectedResult;
         },
+    }
+}
+
+test "escape sequences in instant_string are processed" {
+    var script = try parseSource("::main\n#\"hello\\nworld\"", std.testing.allocator);
+    defer script.deinit();
+    var result = try compile(&script, std.testing.allocator);
+    switch (result) {
+        .ok => |*prog| {
+            defer prog.deinit();
+            const beat = prog.getScene("main").?[0];
+            try std.testing.expectEqualStrings("hello\nworld", beat[0].instant_string);
+        },
+        .err => |*errors| { errors.deinit(); return error.TestUnexpectedResult; },
+    }
+}
+
+test "escaped double quote in instant_string" {
+    var script = try parseSource("::main\n#\"say \\\"hi\\\"\"", std.testing.allocator);
+    defer script.deinit();
+    var result = try compile(&script, std.testing.allocator);
+    switch (result) {
+        .ok => |*prog| {
+            defer prog.deinit();
+            const beat = prog.getScene("main").?[0];
+            try std.testing.expectEqualStrings("say \"hi\"", beat[0].instant_string);
+        },
+        .err => |*errors| { errors.deinit(); return error.TestUnexpectedResult; },
+    }
+}
+
+test "escaped single quote in char_string" {
+    var script = try parseSource("::main\n@'it\\'s alive'", std.testing.allocator);
+    defer script.deinit();
+    var result = try compile(&script, std.testing.allocator);
+    switch (result) {
+        .ok => |*prog| {
+            defer prog.deinit();
+            const beat = prog.getScene("main").?[0];
+            try std.testing.expectEqualStrings("it's alive", beat[0].char_string);
+        },
+        .err => |*errors| { errors.deinit(); return error.TestUnexpectedResult; },
+    }
+}
+
+test "escaped backslash in instant_string" {
+    var script = try parseSource("::main\n#\"path\\\\file\"", std.testing.allocator);
+    defer script.deinit();
+    var result = try compile(&script, std.testing.allocator);
+    switch (result) {
+        .ok => |*prog| {
+            defer prog.deinit();
+            const beat = prog.getScene("main").?[0];
+            try std.testing.expectEqualStrings("path\\file", beat[0].instant_string);
+        },
+        .err => |*errors| { errors.deinit(); return error.TestUnexpectedResult; },
     }
 }
 

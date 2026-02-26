@@ -1,14 +1,18 @@
+// ── main scene: stranger encounter ──
+
 ::main
 #"Stranger:"
 You there.
 ;;
 Yes, you. Don't look so alarmed.
 ;;
+// player waits in silence
 You wait.
 ;;
 #"Stranger:"
 I just need...{ delay medium } directions.
 ;;
+// stranger reveals they have a map but no bearings
 The stranger pulls out a crumpled map.
 ;;
 #"You:"
@@ -17,6 +21,7 @@ Where are you headed?
 #"Stranger:"
 Somewhere warm.
 ;;
+// long beat before the stranger names the destination
 A long pause.{ delay long } Then:
 ;;
 #"Stranger:"
@@ -28,9 +33,13 @@ I do. Follow the main road south — you can't miss it.
 #"Stranger:"
 #"..."
 ;;
+// jumps to market scene on confirm
 The stranger folds the map and walks away without another word.%{ scene market }
 
+// ── market scene ──
+
 ::market
+// instant_lish demo: builds the opening line at runtime
 #{ concat "The market is " "loud and bright" } — a stark contrast to the cold square.
 
 Stalls line every wall. The smell of bread and woodsmoke fills the air.
@@ -42,4 +51,5 @@ Just looking.
 #"Vendor:"
 Take your time.
 ;;
+// end of demo
 You've arrived.

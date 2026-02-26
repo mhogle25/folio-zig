@@ -38,6 +38,23 @@ This is a different scene.
 | `#{...}` | instant lish | Evaluates a lish expression and displays the result instantly as text. |
 | `@{...}` | char lish | Evaluates a lish expression and displays the result character-by-character. |
 
+Both `"double-quoted"` and `'single-quoted'` forms are accepted for all string sigils (`#"..."`, `#'...'`, `@"..."`, `@'...'`). Quoted strings support escape sequences:
+
+| Sequence | Character |
+|----------|-----------|
+| `\\` | Backslash |
+| `\"` | Double quote |
+| `\'` | Single quote |
+| `\n` | Newline |
+| `\r` | Carriage return |
+| `\t` | Tab |
+| `\0` | Null |
+| `\a` | Bell |
+| `\b` | Backspace |
+| `\e` | Escape (0x1B) |
+| `\f` | Form feed |
+| `\v` | Vertical tab |
+
 ### Example Script
 
 ```

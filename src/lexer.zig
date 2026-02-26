@@ -43,6 +43,7 @@ const Lexer = struct {
     }
 
     fn next(self: *Lexer) LexError!Token {
+        while (true) {
         if (self.at_line_start) self.skipSpaces();
 
         if (self.pos >= self.source.len) {
@@ -54,6 +55,19 @@ const Lexer = struct {
         const ch = self.source[self.pos];
 
         if (self.at_line_start) {
+            // // comment: consume the line (including its newline) and retry.
+            if (ch == '/' and self.peekAt(1) == '/') {
+                self.pos += 2;
+                self.col += 2;
+                self.skipToNewline();
+                if (self.pos < self.source.len and self.source[self.pos] == tok.NEWLINE) {
+                    self.pos += 1;
+                    self.line += 1;
+                    self.col = 1;
+                }
+                self.at_line_start = true;
+                continue;
+            }
             if (ch == tok.SCENE_SIGIL and self.peekAt(1) == tok.SCENE_SIGIL) {
                 return self.scanSceneDecl(line, col);
             }
@@ -122,6 +136,7 @@ const Lexer = struct {
         }
 
         return self.scanPlainText(line, col);
+        } // while (true)
     }
 
     fn scanSceneDecl(self: *Lexer, line: u32, col: u32) LexError!Token {
@@ -420,6 +435,48 @@ test "bare sigils without expected follower are plain text" {
     defer std.testing.allocator.free(tokens);
     try std.testing.expectEqual(TokenType.text, tokens[1].token_type);
     try std.testing.expectEqualStrings("100% done #tag @handle", tokens[1].value);
+}
+
+test "line comment is skipped entirely" {
+    const tokens = try tokenize("::main\n// this is a comment\nhello", std.testing.allocator);
+    defer std.testing.allocator.free(tokens);
+    try std.testing.expectEqual(TokenType.scene_decl, tokens[0].token_type);
+    try std.testing.expectEqual(TokenType.text, tokens[1].token_type);
+    try std.testing.expectEqualStrings("hello", tokens[1].value);
+}
+
+test "comment between beats produces no blank line" {
+    const source =
+        \\::main
+        \\Hello.
+        \\;;
+        \\// transitional comment
+        \\World.
+    ;
+    const tokens = try tokenize(source, std.testing.allocator);
+    defer std.testing.allocator.free(tokens);
+    // scene_decl, text("Hello."), newline, beat_break, text("World."), newline, eof
+    var found_comment_text = false;
+    for (tokens) |t| {
+        if (t.token_type == .text and std.mem.startsWith(u8, t.value, "//")) {
+            found_comment_text = true;
+        }
+    }
+    try std.testing.expect(!found_comment_text);
+}
+
+test "comment at end of file produces no extra tokens" {
+    const tokens = try tokenize("::main\nhello\n// trailing comment", std.testing.allocator);
+    defer std.testing.allocator.free(tokens);
+    const last = tokens[tokens.len - 1];
+    try std.testing.expectEqual(TokenType.eof, last.token_type);
+}
+
+test "// mid-line is plain text not a comment" {
+    const tokens = try tokenize("::main\nhello // world", std.testing.allocator);
+    defer std.testing.allocator.free(tokens);
+    try std.testing.expectEqual(TokenType.text, tokens[1].token_type);
+    try std.testing.expectEqualStrings("hello // world", tokens[1].value);
 }
 
 test "unclosed brace is an error" {
