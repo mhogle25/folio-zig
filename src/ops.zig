@@ -19,6 +19,7 @@ pub fn registerAll(registry: *Registry, runner: *Runner, allocator: Allocator) A
     try registry.registerOperation(allocator, "skip", Operation.fromBoundFn(Runner, skipOp, runner));
     try registry.registerOperation(allocator, "continue", Operation.fromBoundFn(Runner, continueOp, runner));
     try registry.registerOperation(allocator, "clear", Operation.fromBoundFn(Runner, clearOp, runner));
+    try registry.registerOperation(allocator, "end", Operation.fromBoundFn(Runner, endOp, runner));
 }
 
 // ── Ops ──
@@ -122,5 +123,12 @@ fn continueOp(self: *Runner, args: Args) ExecError!?lish.Value {
 fn clearOp(self: *Runner, args: Args) ExecError!?lish.Value {
     _ = args;
     self.render_target.clear();
+    return null;
+}
+
+/// Immediately end the scene, bypassing any remaining beats.
+fn endOp(self: *Runner, args: Args) ExecError!?lish.Value {
+    _ = args;
+    self.endScene();
     return null;
 }

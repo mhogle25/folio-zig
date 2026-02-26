@@ -218,6 +218,12 @@ pub const Runner = struct {
         self.advanceBeat();
     }
 
+    /// Immediately end the scene regardless of remaining beats.
+    /// Intended for use by the end op.
+    pub fn endScene(self: *Runner) void {
+        self.runner_state = .done;
+    }
+
     pub fn getState(self: *const Runner) RunnerState {
         return self.runner_state;
     }

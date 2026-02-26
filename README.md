@@ -253,16 +253,27 @@ if (state == .waiting) {
 
 ```
 loadScene()
-    │
-    ▼
- emitting ──advance()──► emitting (typewriter in progress)
-    │                        │
-    │                        ▼ (beat complete)
-    │                     waiting ──confirm()──► emitting (next beat)
-    │                                               │
-    │                                               ▼ (last beat)
-    └───────────────────────────────────────────► done
+     │
+     ▼
+┌──────────┐◄──────────────────────────────┐
+│ emitting │     confirm() (next beat)     │
+└──────────┘                               │
+     │ advance() — beat fully emitted      │
+     ▼                                     │
+┌─────────┐  confirm() (more beats)        │
+│ waiting │─────────────────────────────── ┘
+└─────────┘
+     │ confirm() (last beat)
+     ▼
+  ┌──────┐
+  │ done │
+  └──────┘
 ```
+
+- `advance(delta_ms)` drives the typewriter each frame. When the beat is fully emitted, the runner transitions to `waiting`.
+- `confirm()` in `waiting` loops back to `emitting` if more beats remain, or transitions to `done` on the last beat.
+- `confirm()` in `emitting` (when `confirm_skips` is true) flushes the current beat instantly and transitions to `waiting`.
+- The `end` op transitions to `done` immediately from any state.
 
 | State | Meaning |
 |-------|---------|
@@ -297,6 +308,7 @@ pub const RunnerConfig = struct {
 | `skip` | 0 | Flush current beat and immediately advance to the next |
 | `continue` | 0 | Flush current beat to waiting state without advancing |
 | `clear` | 0 | Clear the render target |
+| `end` | 0 | Immediately end the scene, bypassing any remaining beats |
 
 These map directly to runner behavior — no game-specific rendering logic is included.
 
@@ -367,7 +379,7 @@ zig build
 | `parser.zig` | Converts token stream into a `Script` |
 | `programme.zig` | Compiles a `Script` into an executable `Programme` |
 | `runner.zig` | Drives a `Programme` via `RenderTarget`; typewriter, beats, deferred ops |
-| `ops.zig` | folio built-in lish operations (instant, speed, delay, scene, skip, continue, clear) |
+| `ops.zig` | folio built-in lish operations (instant, ffwd, speed, delay, scene, skip, continue, clear, end) |
 | `main.zig` | Terminal player entry point |
 
 ## License
