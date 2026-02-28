@@ -25,21 +25,16 @@ pub fn parse(tokens: []const Token, allocator: std.mem.Allocator) !Script {
     var current_name: ?[]const u8 = null;
     var current_beats: std.ArrayListUnmanaged(Beat) = .{};
     var current_nodes: std.ArrayListUnmanaged(Node) = .{};
-    // Tracks whether the current beat was explicitly opened by a beat break.
-    // An explicitly opened beat is always emitted, even if empty, because the
-    // author intentionally placed ;; there.
-    var explicit_beat: bool = false;
 
     for (tokens) |token| {
         switch (token.token_type) {
             .scene_decl => {
-                try finalizeScene(arena_alloc, &scenes, current_name, &current_beats, &current_nodes, &explicit_beat);
+                try finalizeScene(arena_alloc, &scenes, current_name, &current_beats, &current_nodes);
                 current_name = token.value;
             },
             .beat_break => {
                 const beat = try closeBeatNodes(arena_alloc, &current_nodes);
                 try current_beats.append(arena_alloc, beat);
-                explicit_beat = true;
             },
             .text => try current_nodes.append(arena_alloc, .{ .text = token.value }),
             .char_string => try current_nodes.append(arena_alloc, .{ .char_string = token.value }),
@@ -61,7 +56,7 @@ pub fn parse(tokens: []const Token, allocator: std.mem.Allocator) !Script {
                 try current_nodes.append(arena_alloc, .{ .char_lish = ast_node });
             },
             .eof => {
-                try finalizeScene(arena_alloc, &scenes, current_name, &current_beats, &current_nodes, &explicit_beat);
+                try finalizeScene(arena_alloc, &scenes, current_name, &current_beats, &current_nodes);
                 break;
             },
         }
@@ -97,22 +92,15 @@ fn finalizeScene(
     name: ?[]const u8,
     beats: *std.ArrayListUnmanaged(Beat),
     nodes: *std.ArrayListUnmanaged(Node),
-    explicit_beat: *bool,
 ) !void {
     const scene_name = name orelse {
         // Discard any content appearing before the first scene declaration.
         nodes.clearRetainingCapacity();
         beats.clearRetainingCapacity();
-        explicit_beat.* = false;
         return;
     };
-    // Add a final beat if: there is non-newline content, OR the beat was
-    // explicitly opened by a ;; (in which case it's intentionally empty).
     const beat = try closeBeatNodes(allocator, nodes);
-    if (beat.len > 0 or explicit_beat.*) {
-        try beats.append(allocator, beat);
-    }
-    explicit_beat.* = false;
+    if (beat.len > 0) try beats.append(allocator, beat);
     const scene = try beats.toOwnedSlice(allocator);
     try scenes.put(allocator, scene_name, scene);
 }
@@ -158,13 +146,12 @@ test "beat break creates two beats" {
     try std.testing.expectEqualStrings("World.", scene[1][0].text);
 }
 
-test "trailing beat break creates empty final beat" {
+test "trailing beat break is ignored" {
     var script = try parseSource("::main\nHello.\n;;", std.testing.allocator);
     defer script.deinit();
     const scene = script.getScene("main").?;
-    try std.testing.expectEqual(@as(usize, 2), scene.len);
-    try std.testing.expectEqual(@as(usize, 1), scene[0].len);
-    try std.testing.expectEqual(@as(usize, 0), scene[1].len);
+    try std.testing.expectEqual(@as(usize, 1), scene.len);
+    try std.testing.expectEqualStrings("Hello.", scene[0][0].text);
 }
 
 test "multiple scenes" {

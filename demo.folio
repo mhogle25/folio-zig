@@ -37,11 +37,11 @@ I do. Follow the main road south — you can't miss it.
 The stranger folds the map and walks away without another word.%{ scene market }
 ;;
 
-// ── market scene ──
+// market scene 
 
 ::market
 // instant_lish demo: builds the opening line at runtime
-#{ concat "The market is " "loud and bright" } — a stark contrast to the cold square.
+#{ concat "The market is " "loud and bright" } a stark contrast to the cold square.
 
 Stalls line every wall. The smell of bread and woodsmoke fills the air.
 ;;
